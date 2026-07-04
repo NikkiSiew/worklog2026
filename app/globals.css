@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+/* Alignment OS 設計 tokens（沿用原型既有視覺識別）
+   [已查證:來源 page_project.html :root 變數] */
+:root {
+  --green: #8E977D; --green-deep: #6b7459; --green-soft: #B5BC9F;
+  --lemon: #DBCEA5; --lemon-deep: #8A7650;
+  --ink: #3a3527; --ink-soft: #6b6450; --muted: #a39c84;
+  --camel: #DBCEA5; --camel-deep: #8A7650;
+  --terra: #9B0F06;
+  --r-xl: 30px; --r-lg: 26px; --r-md: 16px; --r-pill: 100px;
+}
+
+body {
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 88% 12%, #E0D9BE 0%, transparent 45%),
+    radial-gradient(circle at 80% 90%, #E0D9BE 0%, transparent 48%),
+    linear-gradient(135deg, #ECE7D1 0%, #F2EEDD 50%, #ECE7D1 100%);
+  background-attachment: fixed;
+}
+
+/* 共用元件樣式 */
+.card { background: #fff; border-radius: var(--r-lg); padding: 22px; box-shadow: 0 1px 3px rgba(58,53,39,.06); }
+.pill { border-radius: var(--r-pill); padding: 4px 12px; font-size: 12px; display: inline-block; }
+.btn-primary { background: var(--green); color: #fff; border-radius: var(--r-md); padding: 8px 16px; font-size: 14px; font-weight: 500; }
+.btn-primary:disabled { opacity: .5; }
