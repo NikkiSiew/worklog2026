@@ -9,6 +9,9 @@ import {
   fetchOwnershipSplit,
   fetchAttention,
   fetchProjectsForAlign,
+  fetchKpiOptions,
+  fetchProjectKpis,
+  setProjectKpis,
   reorderWithinPriority,
   subscribeAlign,
   LEVERAGE_META,
@@ -16,6 +19,7 @@ import {
   type TimeFlow,
   type ProjectRow,
   type ProjectProgressRow,
+  type KpiLite,
 } from '@/lib/align'
 
 const PRIORITIES = ['P1', 'P2', 'P3'] as const
@@ -33,18 +37,22 @@ export default function AlignPage() {
   const [attention, setAttention] = useState({ pending: 0, blockers: 0 })
   const [projects, setProjects] = useState<ProjectRow[]>([])
   const [progress, setProgress] = useState<Record<string, ProjectProgressRow>>({})
+  const [kpiOpts, setKpiOpts] = useState<KpiLite[]>([])
+  const [projectKpis, setProjectKpisMap] = useState<Record<string, string[]>>({})
   const [err, setErr] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const dragTask = useRef<AlignTask | null>(null)
 
   const load = useCallback(async () => {
     try {
-      const [pt, tf, os, att, pj] = await Promise.all([
+      const [pt, tf, os, att, pj, ko, pk] = await Promise.all([
         fetchPriorityTasks(),
         fetchTimeFlow(),
         fetchOwnershipSplit(),
         fetchAttention(),
         fetchProjectsForAlign(),
+        fetchKpiOptions(),
+        fetchProjectKpis(),
       ])
       setTasks(pt)
       setTimeFlow(tf)
@@ -52,6 +60,8 @@ export default function AlignPage() {
       setAttention(att)
       setProjects(pj.projects)
       setProgress(pj.progress)
+      setKpiOpts(ko)
+      setProjectKpisMap(pk)
     } catch (e) {
       setErr(String(e))
     }
@@ -297,27 +307,17 @@ export default function AlignPage() {
             所有專案
           </h2>
           <div className="mt-3 space-y-2">
-            {projects.map((p) => {
-              const pg = progress[p.id]
-              return (
-                <div key={p.id} className="flex items-center gap-3 text-sm">
-                  <span className="mr-auto" style={{ color: 'var(--ink)' }}>
-                    {p.name}
-                    {p.is_core && (
-                      <span className="ml-2 pill" style={{ background: 'var(--lemon)', color: 'var(--lemon-deep)' }}>
-                        核心
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                    {p.status}
-                  </span>
-                  <span className="text-xs" style={{ color: 'var(--green-deep)' }}>
-                    {pg ? `${pg.progress_pct}%` : '0%'}
-                  </span>
-                </div>
-              )
-            })}
+            {projects.map((p) => (
+              <ProjectKpiRow
+                key={p.id}
+                project={p}
+                progress={progress[p.id]}
+                kpiOpts={kpiOpts}
+                selectedKpis={projectKpis[p.id] ?? []}
+                onSaved={load}
+                onError={setErr}
+              />
+            ))}
             {projects.length === 0 && (
               <p className="text-xs" style={{ color: 'var(--muted)' }}>
                 尚無專案。
@@ -327,5 +327,117 @@ export default function AlignPage() {
         </section>
       </div>
     </main>
+  )
+}
+
+function ProjectKpiRow({
+  project,
+  progress,
+  kpiOpts,
+  selectedKpis,
+  onSaved,
+  onError,
+}: {
+  project: ProjectRow
+  progress: ProjectProgressRow | undefined
+  kpiOpts: KpiLite[]
+  selectedKpis: string[]
+  onSaved: () => void
+  onError: (e: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [picked, setPicked] = useState<string[]>(selectedKpis)
+  const kpiName = (id: string) => kpiOpts.find((k) => k.id === id)?.name ?? ''
+
+  return (
+    <div className="border-b pb-2" style={{ borderColor: 'var(--lemon)' }}>
+      <div className="flex items-center gap-3 text-sm">
+        <span className="mr-auto" style={{ color: 'var(--ink)' }}>
+          {project.name}
+          {project.is_core && (
+            <span className="ml-2 pill" style={{ background: 'var(--lemon)', color: 'var(--lemon-deep)' }}>
+              核心
+            </span>
+          )}
+        </span>
+        <span className="text-xs" style={{ color: 'var(--muted)' }}>
+          {project.status}
+        </span>
+        <span className="text-xs" style={{ color: 'var(--green-deep)' }}>
+          {progress ? `${progress.progress_pct}%` : '0%'}
+        </span>
+        <button
+          onClick={() => {
+            setPicked(selectedKpis)
+            setEditing(!editing)
+          }}
+          className="text-xs underline"
+          style={{ color: 'var(--green-deep)' }}
+        >
+          對齊 KPI
+        </button>
+      </div>
+
+      {/* KPI 標籤顯示 */}
+      {selectedKpis.length > 0 && !editing && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {selectedKpis.map((kid) => (
+            <span key={kid} className="pill text-xs" style={{ background: 'rgba(142,151,125,.15)', color: 'var(--green-deep)' }}>
+              ↑ {kpiName(kid)}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* KPI 編輯（多選）*/}
+      {editing && (
+        <div className="mt-2 rounded-lg border p-2" style={{ borderColor: 'var(--lemon)' }}>
+          <div className="space-y-1">
+            {kpiOpts.map((k) => (
+              <label key={k.id} className="flex items-center gap-2 text-xs" style={{ color: 'var(--ink)' }}>
+                <input
+                  type="checkbox"
+                  checked={picked.includes(k.id)}
+                  onChange={() =>
+                    setPicked((prev) =>
+                      prev.includes(k.id) ? prev.filter((x) => x !== k.id) : [...prev, k.id]
+                    )
+                  }
+                />
+                {k.name}
+              </label>
+            ))}
+            {kpiOpts.length === 0 && (
+              <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                尚無 KPI，請先到 Dashboard 新增。
+              </p>
+            )}
+          </div>
+          <div className="mt-2 flex gap-2">
+            <button
+              onClick={async () => {
+                try {
+                  await setProjectKpis(project.id, picked)
+                  setEditing(false)
+                  onSaved()
+                } catch (e) {
+                  onError(String(e))
+                }
+              }}
+              className="btn-primary"
+            >
+              儲存
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              className="rounded-lg px-3 py-1.5 text-xs"
+              style={{ background: 'var(--lemon)', color: 'var(--lemon-deep)' }}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }

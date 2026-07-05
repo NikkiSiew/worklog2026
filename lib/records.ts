@@ -22,6 +22,8 @@ export type RecordTask = {
   version: number
   source_recurring_id: string | null
   source_period_key: string | null
+  displaced_to: string | null
+  displaced_reason: string | null
 }
 
 export type RecurringItem = {
@@ -384,4 +386,58 @@ export async function fetchProjectOptions(): Promise<
     .order('sort_order')
   if (error) throw error
   return (data ?? []) as { id: string; name: string }[]
+}
+
+// 今天開始的循環項目（App 內提醒橫幅用，C 組）
+// [你的決定:循環開始日提醒=App 內橫幅/標記]
+// 條件:是循環生成的 task(source_recurring_id 非空)、排在今天、未完成。
+export async function fetchTodayRecurringReminders(): Promise<
+  { id: string; name: string }[]
+> {
+  const supabase = createClient()
+  const today = new Date().toISOString().slice(0, 10)
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('id, name')
+    .eq('scheduled_date', today)
+    .not('source_recurring_id', 'is', null)
+    .eq('is_done', false)
+  if (error) throw error
+  return (data ?? []) as { id: string; name: string }[]
+}
+
+// B3:標記 task 被排擠改期（改到哪天+原因）
+export async function setTaskDisplaced(
+  taskId: string,
+  displacedTo: string,
+  reason: string
+): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from('tasks')
+    .update({ displaced_to: displacedTo, displaced_reason: reason })
+    .eq('id', taskId)
+  if (error) throw error
+}
+
+// B3-A:拖曳讓位。把佔用者真的移到新日期（讓出原時段）+ 記改期標記。
+// [你的決定:B3-A 拖到被佔時段就問是否讓位改期]
+// 讓位=改期並移走(scheduled_date 改成新日),不只是記標記,否則位子還被佔著。
+export async function displaceAndReschedule(
+  taskId: string,
+  displacedTo: string,
+  reason: string
+): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from('tasks')
+    .update({
+      displaced_to: displacedTo,
+      displaced_reason: reason,
+      scheduled_date: displacedTo, // 真的移到新那天
+      time_start: null, // 清空原時段(到新那天再重排)
+      time_end: null,
+    })
+    .eq('id', taskId)
+  if (error) throw error
 }

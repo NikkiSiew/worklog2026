@@ -13,6 +13,8 @@ import {
   updateTaskOwnership,
   updateTaskAttrs,
   fetchProjectOptions,
+  fetchTodayRecurringReminders,
+  setTaskDisplaced,
   summarize,
   type RecordTask,
 } from '@/lib/records'
@@ -34,19 +36,22 @@ export default function RecordPage() {
   const [dayTasks, setDayTasks] = useState<RecordTask[]>([])
   const [inboxTasks, setInboxTasks] = useState<RecordTask[]>([])
   const [projectOpts, setProjectOpts] = useState<{ id: string; name: string }[]>([])
+  const [reminders, setReminders] = useState<{ id: string; name: string }[]>([])
   const [err, setErr] = useState<string | null>(null)
   const [newIdea, setNewIdea] = useState('')
 
   const load = useCallback(async () => {
     try {
-      const [dt, ib, po] = await Promise.all([
+      const [dt, ib, po, rm] = await Promise.all([
         fetchTasksByDate(date),
         fetchInbox(),
         fetchProjectOptions(),
+        fetchTodayRecurringReminders(),
       ])
       setDayTasks(dt)
       setInboxTasks(ib)
       setProjectOpts(po)
+      setReminders(rm)
     } catch (e) {
       setErr(String(e))
     }
@@ -116,6 +121,23 @@ export default function RecordPage() {
     }
   }
 
+  // B3:標記被排擠改期（填改到哪天 + 原因）
+  async function handleDisplace(taskId: string) {
+    const to = window.prompt('被排擠，改到哪天？(YYYY-MM-DD)')
+    if (!to) return
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      setErr('日期格式需為 YYYY-MM-DD')
+      return
+    }
+    const reason = window.prompt('改期原因？(如：被更高優先項插隊)') ?? ''
+    try {
+      await setTaskDisplaced(taskId, to, reason)
+      await load()
+    } catch (e) {
+      setErr(String(e))
+    }
+  }
+
   return (
     <main className="min-h-screen p-6">
       <div className="mx-auto max-w-4xl">
@@ -136,6 +158,20 @@ export default function RecordPage() {
             style={{ borderColor: 'var(--lemon)' }}
           />
         </header>
+
+        {/* 循環項目開始日提醒（App 內橫幅，C 組）*/}
+        {reminders.length > 0 && (
+          <div
+            className="mb-4 rounded-lg p-3 text-sm"
+            style={{ background: '#FBF3D9', color: 'var(--lemon-deep)' }}
+          >
+            ⏰ 今天開始的循環項目：
+            {reminders.map((r) => r.name).join('、')}
+            <span className="ml-1" style={{ color: 'var(--muted)' }}>
+              — 已自動排入時間軸
+            </span>
+          </div>
+        )}
 
         {err && (
           <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">
@@ -299,6 +335,14 @@ export default function RecordPage() {
                         style={{ color: 'var(--green-deep)' }}
                       >
                         實際 {t.actual_hours}h
+                      </button>
+                      <button
+                        onClick={() => handleDisplace(t.id)}
+                        className="text-xs underline"
+                        style={{ color: 'var(--muted)' }}
+                        title="被更高優先項插隊、被迫改期"
+                      >
+                        {t.displaced_to ? `改期→${t.displaced_to}` : '標記改期'}
                       </button>
                     </>
                   )}

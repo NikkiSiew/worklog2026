@@ -31,6 +31,7 @@ export type Kpi = {
   review_frequency: string
   source: string
   trend: string | null
+  screenshot_url: string | null
   sort_order: number
 }
 

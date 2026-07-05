@@ -10,6 +10,7 @@ export type Project = {
   owner: string | null
   due_date: string | null
   is_core: boolean
+  start_date: string | null
   est_complete_date: string | null
   sort_order: number
 }
@@ -113,5 +114,92 @@ export async function updateProject(
 ): Promise<void> {
   const supabase = createClient()
   const { error } = await supabase.from('projects').update(patch).eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase.from('projects').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ===== 階段（Phase）CRUD =====
+// [缺口修補:原本專案頁只顯示階段,無法新增/編輯/刪除]
+export async function createPhase(
+  projectId: string,
+  name: string,
+  seq: number
+): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from('project_phases')
+    .insert({ project_id: projectId, name, seq })
+  if (error) throw error
+}
+
+export async function updatePhase(
+  id: string,
+  patch: Partial<Phase>
+): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from('project_phases')
+    .update(patch)
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function deletePhase(id: string): Promise<void> {
+  const supabase = createClient()
+  // 先把該階段的 task 解除 phase 關聯（避免外鍵孤兒），再刪階段
+  await supabase.from('tasks').update({ phase_id: null }).eq('phase_id', id)
+  const { error } = await supabase.from('project_phases').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ===== 卡點（Blocker）CRUD =====
+// [缺口修補:原本專案頁只顯示卡點,無法新增/編輯/刪除]
+export async function createBlocker(
+  projectId: string,
+  blocker: Partial<Blocker>
+): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from('project_blockers')
+    .insert({ project_id: projectId, ...blocker })
+  if (error) throw error
+}
+
+export async function updateBlocker(
+  id: string,
+  patch: Partial<Blocker>
+): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from('project_blockers')
+    .update(patch)
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteBlocker(id: string): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from('project_blockers')
+    .delete()
+    .eq('id', id)
+  if (error) throw error
+}
+
+// 新增 task 到某專案/階段（專案頁直接建工作項用）
+export async function createProjectTask(
+  projectId: string,
+  phaseId: string | null,
+  name: string
+): Promise<void> {
+  const supabase = createClient()
+  const { error } = await supabase
+    .from('tasks')
+    .insert({ project_id: projectId, phase_id: phaseId, name })
   if (error) throw error
 }

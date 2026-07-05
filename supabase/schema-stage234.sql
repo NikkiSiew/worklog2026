@@ -35,6 +35,9 @@ create table if not exists projects (
   owner text,                               -- [已查證:原型「James」]
   due_date date,                            -- [已查證:原型「6/25」]
   is_core boolean default false,            -- [已查證:原型「核心專案」]
+  -- 專案起始日:配合 due_date 做「本週應達 X%」線性時程推算(純算術,非預測)。
+  -- [你的決定:B組選項1,做起始日+應達%]
+  start_date date,
   -- 預計完成日:你的決定=先不做自動預測，留手動填。
   -- [已查證:原型「依近期速度推估」未給算法；自動預測缺陷大(估時不準、
   --  假設未來=過去)，故不自動算，由你手動填]
@@ -113,6 +116,10 @@ create table if not exists tasks (
   --    (recurring_items 定義在 tasks 之後)。
   source_recurring_id uuid,
   source_period_key text,                   -- 該 task 對應的週期鍵
+  -- 被排擠改期(B3):被更高優先項插隊時,記錄改到哪天+原因。
+  -- [你的決定:記在 task 加欄位]。null=沒被改期過。
+  displaced_to date,                        -- 被迫改到哪天
+  displaced_reason text,                    -- 改期原因
   -- 樂觀鎖版本號:防多裝置同時拖曳時默默覆蓋。
   -- 更新帶 WHERE version=舊值,成功則 +1;影響 0 筆=有人先改了。
   -- [已查證:OCC 標準做法,dev.to 2025/hrekov.com 2026]
@@ -195,8 +202,20 @@ create table if not exists kpis (
   -- [已查證:原型「新訂的維運指標/從 KR 畢業」]
   source text default 'new',
   trend text,                               -- [已查證:原型「好轉/2%」]
+  -- KPI 趨勢截圖(C 組):client 壓縮後上傳 Storage,存公開 URL。
+  -- [你的決定:截圖上傳+自動壓縮]
+  screenshot_url text,
   updated_at timestamptz default now(),
   sort_order int default 0
+);
+
+-- ---------- 表 6b：project_kpis（專案↔KPI 多對多，B4）----------
+-- [你的決定:多對多。一專案可對多 KPI、一 KPI 可被多專案推動]
+-- 用途:對齊頁顯示「這專案在維護哪些 KPI」標籤。
+create table if not exists project_kpis (
+  project_id uuid references projects(id) on delete cascade,
+  kpi_id uuid references kpis(id) on delete cascade,
+  primary key (project_id, kpi_id)
 );
 
 -- ---------- 表 8：risks（風險預警，Dashboard）----------
@@ -251,6 +270,7 @@ alter table recurring_items  enable row level security;
 alter table recurring_skips  enable row level security;
 alter table project_blockers enable row level security;
 alter table kpis             enable row level security;
+alter table project_kpis     enable row level security;
 alter table risks            enable row level security;
 alter table weekly_reports   enable row level security;
 
@@ -259,7 +279,7 @@ declare t text;
 begin
   foreach t in array array[
     'projects','project_phases','okrs','key_results','tasks',
-    'recurring_items','recurring_skips','project_blockers','kpis','risks','weekly_reports'
+    'recurring_items','recurring_skips','project_blockers','kpis','project_kpis','risks','weekly_reports'
   ]
   loop
     execute format(

@@ -19,6 +19,7 @@ import {
   subscribeTasks,
   ensureRecurringForWeek,
   deleteRecurringOccurrence,
+  displaceAndReschedule,
   deleteTask,
   minToTime,
   timeToMin,
@@ -41,7 +42,7 @@ export default function Timeline({ date }: { date: string }) {
   const [inbox, setInbox] = useState<RecordTask[]>([])
   const [err, setErr] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const dragData = useRef<{ taskId: string; version: number; duration: number } | null>(null)
+  const dragData = useRef<{ taskId: string; name: string; version: number; duration: number } | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -97,13 +98,13 @@ export default function Timeline({ date }: { date: string }) {
 
   function onDragStartInbox(t: RecordTask) {
     // Inbox 項目預設排 1 小時（2 格）
-    dragData.current = { taskId: t.id, version: t.version ?? 0, duration: 60 }
+    dragData.current = { taskId: t.id, name: t.name, version: t.version ?? 0, duration: 60 }
   }
   function onDragStartScheduled(t: RecordTask) {
     const a = timeToMin(t.time_start)
     const b = timeToMin(t.time_end)
     const dur = a != null && b != null ? b - a : 60
-    dragData.current = { taskId: t.id, version: t.version ?? 0, duration: dur }
+    dragData.current = { taskId: t.id, name: t.name, version: t.version ?? 0, duration: dur }
   }
 
   async function onDropSlot(startMin: number) {
@@ -111,17 +112,45 @@ export default function Timeline({ date }: { date: string }) {
     dragData.current = null
     if (!d) return
     // 檢查目標時段是否與現有 task 重疊（排除自己）
-    // [debug loop 修正:原本未檢查重疊,可把兩筆疊在同一格]
     const endMin = startMin + d.duration
-    const clash = dayTasks.some((t) => {
+    const occupier = dayTasks.find((t) => {
       if (t.id === d.taskId) return false
       const a = timeToMin(t.time_start)
       const b = timeToMin(t.time_end)
       if (a == null || b == null) return false
       return startMin < b && endMin > a // 區間重疊
     })
-    if (clash) {
-      setNotice('這個時段和已排的工作項重疊了，請換一個空檔。')
+    if (occupier) {
+      // B3-A:被佔用時,問是否讓位改期(把佔用者移到別天)
+      // [你的決定:拖到被佔時段就問是否讓位改期]
+      const yes = window.confirm(
+        `這個時段被「${occupier.name}」佔用。\n要讓它改期、把位子讓給「${d.name}」嗎？`
+      )
+      if (!yes) {
+        setNotice('已取消。可換一個空檔再排。')
+        return
+      }
+      const to = window.prompt(`「${occupier.name}」改到哪天？(YYYY-MM-DD)`, date)
+      if (!to || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+        setNotice('未填有效日期，讓位取消。')
+        return
+      }
+      const reason =
+        window.prompt('改期原因？', `讓位給「${d.name}」`) ?? `讓位給「${d.name}」`
+      try {
+        // 先讓佔用者改期移走
+        await displaceAndReschedule(occupier.id, to, reason)
+        // 再把新 task 排進空出的時段
+        const r = await scheduleTaskOCC(d.taskId, d.version, date, startMin, d.duration)
+        if (r === 'conflict') {
+          setNotice('這筆已被其他裝置更新，已為你重新整理。')
+        } else {
+          setNotice(`已將「${occupier.name}」改期至 ${to}，並排入「${d.name}」。`)
+        }
+        await load()
+      } catch (e) {
+        setErr(String(e))
+      }
       return
     }
     try {

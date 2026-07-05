@@ -190,3 +190,52 @@ export function subscribeAlign(onChange: () => void): () => void {
     supabase.removeChannel(channel)
   }
 }
+
+// ===== 專案↔KPI 標籤（B4，多對多）=====
+export type KpiLite = { id: string; name: string }
+
+export async function fetchKpiOptions(): Promise<KpiLite[]> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('kpis')
+    .select('id, name')
+    .order('sort_order')
+  if (error) throw error
+  return (data ?? []) as KpiLite[]
+}
+
+// 讀專案↔KPI 關聯，回傳 { projectId: kpiId[] }
+export async function fetchProjectKpis(): Promise<Record<string, string[]>> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('project_kpis')
+    .select('project_id, kpi_id')
+  if (error) throw error
+  const map: Record<string, string[]> = {}
+  ;(data ?? []).forEach((r) => {
+    ;(map[r.project_id] ??= []).push(r.kpi_id)
+  })
+  return map
+}
+
+// 設定某專案對齊的 KPI（多對多）：先補後刪，避免中途清空
+// [沿用 setKrProjects 的安全模式]
+export async function setProjectKpis(
+  projectId: string,
+  kpiIds: string[]
+): Promise<void> {
+  const supabase = createClient()
+  if (kpiIds.length > 0) {
+    const rows = kpiIds.map((kid) => ({ project_id: projectId, kpi_id: kid }))
+    const { error: upErr } = await supabase
+      .from('project_kpis')
+      .upsert(rows, { onConflict: 'project_id,kpi_id' })
+    if (upErr) throw upErr
+  }
+  let q = supabase.from('project_kpis').delete().eq('project_id', projectId)
+  if (kpiIds.length > 0) {
+    q = q.not('kpi_id', 'in', `(${kpiIds.join(',')})`)
+  }
+  const { error: delErr } = await q
+  if (delErr) throw delErr
+}

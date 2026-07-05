@@ -21,6 +21,7 @@ import {
   type Kpi,
   type Risk,
 } from '@/lib/dashboard'
+import { uploadKpiScreenshot } from '@/lib/storage'
 
 export default function DashboardPage() {
   const [tasks, setTasks] = useState<DashTask[]>([])
@@ -213,32 +214,67 @@ export default function DashboardPage() {
               {kpis.map((k) => {
                 const breached = isKpiBreached(k)
                 return (
-                  <div key={k.id} className="flex items-center gap-2 text-sm">
-                    <span style={{ color: 'var(--ink)' }}>{k.name}</span>
-                    <span className="ml-auto" style={{ color: breached ? 'var(--terra)' : 'var(--ink)' }}>
-                      {k.current_value ?? '—'}
-                      {k.unit ?? ''}
-                    </span>
-                    <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                      / {k.target_value ?? '—'}
-                      {k.unit ?? ''}
-                    </span>
-                    {breached && (
-                      <span className="pill text-xs" style={{ background: '#FBE9E7', color: 'var(--terra)' }}>
-                        破紅線
+                  <div key={k.id} className="border-b pb-2" style={{ borderColor: 'var(--lemon)' }}>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span style={{ color: 'var(--ink)' }}>{k.name}</span>
+                      <span className="ml-auto" style={{ color: breached ? 'var(--terra)' : 'var(--ink)' }}>
+                        {k.current_value ?? '—'}
+                        {k.unit ?? ''}
                       </span>
-                    )}
-                    <button
-                      onClick={async () => {
-                        if (!window.confirm('刪除這個 KPI？')) return
-                        await deleteKpi(k.id)
-                        await load()
-                      }}
-                      className="text-xs"
-                      style={{ color: 'var(--muted)' }}
-                    >
-                      ✕
-                    </button>
+                      <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                        / {k.target_value ?? '—'}
+                        {k.unit ?? ''}
+                      </span>
+                      {breached && (
+                        <span className="pill text-xs" style={{ background: '#FBE9E7', color: 'var(--terra)' }}>
+                          破紅線
+                        </span>
+                      )}
+                      <button
+                        onClick={async () => {
+                          if (!window.confirm('刪除這個 KPI？')) return
+                          await deleteKpi(k.id)
+                          await load()
+                        }}
+                        className="text-xs"
+                        style={{ color: 'var(--muted)' }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    {/* 趨勢截圖（上傳自動壓縮）*/}
+                    <div className="mt-1 flex items-center gap-3">
+                      {k.screenshot_url && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={k.screenshot_url}
+                          alt={`${k.name} 趨勢`}
+                          className="h-12 rounded border"
+                          style={{ borderColor: 'var(--lemon)' }}
+                        />
+                      )}
+                      <label className="text-xs underline cursor-pointer" style={{ color: 'var(--green-deep)' }}>
+                        {k.screenshot_url ? '換截圖' : '上傳趨勢截圖'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            try {
+                              await uploadKpiScreenshot(k.id, file)
+                              await load()
+                            } catch (err) {
+                              setErr(String(err))
+                            }
+                          }}
+                        />
+                      </label>
+                      <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                        上傳後自動壓縮
+                      </span>
+                    </div>
                   </div>
                 )
               })}
